@@ -36,6 +36,7 @@ namespace HarmonyLib.Internal.RuntimeFixes
 				DetourManager.ILHookApplied += OnILChainRefresh;
 				DetourManager.ILHookUndone += OnILChainRefresh;
 
+				getMethodHook = new Hook(AccessTools.DeclaredMethod(typeof(StackFrame), nameof(StackFrame.GetMethod), EmptyType.NoArgs), GetMethodFix);
 				getAssemblyMethod = AccessTools.DeclaredMethod(typeof(Assembly), nameof(Assembly.GetExecutingAssembly), EmptyType.NoArgs);
 				if (getAssemblyMethod.HasMethodBody())
 				{
@@ -49,8 +50,6 @@ namespace HarmonyLib.Internal.RuntimeFixes
 					getAssemblyNativeDetour = DetourFactory.Current.CreateNativeDetour(sourcePtr, targetPtr);
 					RealMethodMap.Add(PlatformTriple.Current.GetIdentifiable(getAssemblyFixNative), PlatformTriple.Current.GetIdentifiable(getAssemblyMethod));
 				}
-
-				getMethodHook = new Hook(AccessTools.DeclaredMethod(typeof(StackFrame), nameof(StackFrame.GetMethod), EmptyType.NoArgs), GetMethodFix);
 			}
 			catch (Exception e)
 			{
