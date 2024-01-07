@@ -22,9 +22,8 @@ namespace HarmonyLib.Internal.RuntimeFixes
 			new Dictionary<MethodBase, MethodBase>();
 
 		private static Hook getAssemblyHookManaged;
-		private static ICoreNativeDetour getAssemblyNativeDetour;
+		private static ICoreDetour getAssemblyDetour;
 		private static Hook getMethodHook;
-		private static MethodBase getAssemblyMethod;
 
 		public static void Install()
 		{
@@ -36,8 +35,10 @@ namespace HarmonyLib.Internal.RuntimeFixes
 				DetourManager.ILHookApplied += OnILChainRefresh;
 				DetourManager.ILHookUndone += OnILChainRefresh;
 
+				// Must be done first to avoid race condition.
 				getMethodHook = new Hook(AccessTools.DeclaredMethod(typeof(StackFrame), nameof(StackFrame.GetMethod), EmptyType.NoArgs), GetMethodFix);
-				getAssemblyMethod = AccessTools.DeclaredMethod(typeof(Assembly), nameof(Assembly.GetExecutingAssembly), EmptyType.NoArgs);
+
+				var getAssemblyMethod = AccessTools.DeclaredMethod(typeof(Assembly), nameof(Assembly.GetExecutingAssembly), EmptyType.NoArgs);
 				if (getAssemblyMethod.HasMethodBody())
 				{
 					getAssemblyHookManaged = new Hook(getAssemblyMethod, GetAssemblyFix);
@@ -45,9 +46,7 @@ namespace HarmonyLib.Internal.RuntimeFixes
 				else
 				{
 					var getAssemblyFixNative = AccessTools.Method(typeof(StackTraceFixes), nameof(GetAssemblyFixNative));
-					var sourcePtr = PlatformTriple.Current.GetNativeMethodBody(getAssemblyMethod);
-					var targetPtr = PlatformTriple.Current.GetNativeMethodBody(getAssemblyFixNative);
-					getAssemblyNativeDetour = DetourFactory.Current.CreateNativeDetour(sourcePtr, targetPtr);
+					getAssemblyDetour = DetourFactory.Current.CreateDetour(getAssemblyMethod, getAssemblyFixNative);
 					RealMethodMap.Add(PlatformTriple.Current.GetIdentifiable(getAssemblyFixNative), PlatformTriple.Current.GetIdentifiable(getAssemblyMethod));
 				}
 			}
@@ -66,13 +65,14 @@ namespace HarmonyLib.Internal.RuntimeFixes
 		private static Assembly GetAssemblyFix(GetAssemblyDelegate orig)
 		{
 			var entry = getAssemblyHookManaged.DetourInfo.Entry;
-			var method = new StackTrace().GetFrames()!.Select(f => f.GetMethod()).SkipWhile(method => method != entry).Skip(1).First();
+			var method = new StackTrace().GetFrames()!.Select(f => f.GetMethod()).SkipWhile(m => m != entry).Skip(1).First();
 			return method.Module.Assembly;
 		}
 
 		private static Assembly GetAssemblyFixNative()
 		{
-			var method = new StackTrace().GetFrames()!.Select(f => f.GetMethod()).SkipWhile(method => method != getAssemblyMethod).Skip(1).First();
+			var original = getAssemblyDetour.Source;
+			var method = new StackTrace().GetFrames()!.Select(f => f.GetMethod()).SkipWhile(m => m != original).Skip(1).First();
 			return method.Module.Assembly;
 		}
 
